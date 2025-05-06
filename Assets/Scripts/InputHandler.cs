@@ -17,6 +17,9 @@ public class InputHandler : MonoBehaviour
     private Vector2Int originalGridPosition;
     private bool isDragging = false;
     
+    // Hit detection parameters - add this to make block selection more precise
+    [SerializeField] private float hitRadius = 0.3f; // Reduced from default value
+    
     // Rotation input
     private bool rotateRequested = false;
 
@@ -87,11 +90,11 @@ public class InputHandler : MonoBehaviour
             lastClickTime = clickTime;
             lastClickPosition = mouse.position.ReadValue();
         }
-        else if (mouse.leftButton.isPressed && isDragging)
+        else if (mouse.leftButton.isPressed && isDragging && selectedBlock != null)
         {
             UpdateDrag(mouse.position.ReadValue());
         }
-        else if (mouse.leftButton.wasReleasedThisFrame && isDragging)
+        else if (mouse.leftButton.wasReleasedThisFrame && isDragging && selectedBlock != null)
         {
             EndDrag(mouse.position.ReadValue());
         }
@@ -125,14 +128,14 @@ public class InputHandler : MonoBehaviour
                     break;
                     
                 case UnityEngine.TouchPhase.Moved:
-                    if (isDragging)
+                    if (isDragging && selectedBlock != null)
                     {
                         UpdateDrag(primaryTouch.position);
                     }
                     break;
                     
                 case UnityEngine.TouchPhase.Ended:
-                    if (isDragging)
+                    if (isDragging && selectedBlock != null)
                     {
                         EndDrag(primaryTouch.position);
                     }
@@ -185,17 +188,30 @@ public class InputHandler : MonoBehaviour
         Vector3 worldPosition = mainCamera.ScreenToWorldPoint(screenPos);
         worldPosition.z = 0;
         
-        // Get the grid position
-        Vector2Int gridPosition = GetGridPosition(worldPosition);
-        
-        // Get the block at this position
-        Block block = board.GetBlockAtPosition(gridPosition);
+        // Try to find a block at the exact clicked position
+        Block block = FindBlockAtExactPosition(worldPosition);
         
         if (block != null)
         {
             // Double click/tap triggers rotation
             block.TryRotate(true);
         }
+    }
+    
+    // Find a block at the exact position - only returns a block if directly clicked on it
+    private Block FindBlockAtExactPosition(Vector3 worldPos)
+    {
+        // Convert world position to grid position
+        Vector2Int gridPos = GetGridPosition(worldPos);
+        
+        // Check if there's a block at this exact position
+        Block block = board.GetBlockAtPosition(gridPos);
+        if (block != null)
+        {
+            return block;
+        }
+        
+        return null;
     }
 
     void StartDrag(Vector2 screenPos)
@@ -206,8 +222,9 @@ public class InputHandler : MonoBehaviour
         
         // Get the grid position
         Vector2Int gridPosition = GetGridPosition(worldPosition);
+        Debug.Log($"StartDrag at grid position: {gridPosition}");
         
-        // Try to find block at this position
+        // Try to find block at this EXACT position - no radius check
         selectedBlock = board.GetBlockAtPosition(gridPosition);
         
         if (selectedBlock != null)
@@ -216,22 +233,22 @@ public class InputHandler : MonoBehaviour
             originalGridPosition = selectedBlock.PivotGridPosition;
             
             // Calculate offset between touch point and block pivot
-            Vector3 pivotWorldPos = board.GetWorldPositionFromGridPosition(selectedBlock.PivotGridPosition);
-            dragOffset = pivotWorldPos - worldPosition;
+            Vector3 blockPivotWorldPos = board.GetWorldPositionFromGridPosition(selectedBlock.PivotGridPosition);
+            dragOffset = blockPivotWorldPos - worldPosition;
             dragOffset.z = 0;
             
             // Temporarily remove block from grid during dragging
-            List<Vector2Int> occupiedPositions = selectedBlock.GetOccupiedGridPositions();
-            foreach (Vector2Int pos in occupiedPositions)
-            {
-                if (board.IsValidGridPosition(pos) && board.GetBlockAtPosition(pos) == selectedBlock)
-                {
-                    board.RemoveBlock(pos);
-                }
-            }
+            selectedBlock.RemoveFromBoard();
+            
+            // Set visual feedback for dragging
+            selectedBlock.SetDragVisualState(true);
             
             isDragging = true;
-            Debug.Log($"Started dragging block at {gridPosition}");
+            Debug.Log($"Started dragging block at {selectedBlock.PivotGridPosition}");
+        }
+        else
+        {
+            Debug.Log($"No block found at grid position {gridPosition}");
         }
     }
 
@@ -243,74 +260,33 @@ public class InputHandler : MonoBehaviour
         Vector3 worldPosition = mainCamera.ScreenToWorldPoint(screenPos);
         worldPosition.z = 0;
         
-        // Apply offset to get the pivot position
+        // Apply offset to get the desired pivot position
         Vector3 targetPivotPosition = worldPosition + dragOffset;
         
-        // Calculate the grid position for the target
+        // Update block's visual position for smooth dragging
+        selectedBlock.SetDragPosition(targetPivotPosition);
+        
+        // Calculate grid position for preview snapping
         Vector2Int targetGridPos = GetGridPosition(targetPivotPosition);
         
-        // Find movement direction (comparing to current position)
-        Vector2Int currentGridPos = selectedBlock.PivotGridPosition;
-        Vector2Int moveDirection = new Vector2Int(
-            Mathf.Clamp(targetGridPos.x - currentGridPos.x, -1, 1),
-            Mathf.Clamp(targetGridPos.y - currentGridPos.y, -1, 1)
-        );
-        
-        // If we're not trying to move, just update the visual position
-        if (moveDirection.x == 0 && moveDirection.y == 0)
+        // Only attempt to move the block if we're in a different grid cell
+        if (targetGridPos != selectedBlock.PivotGridPosition)
         {
-            selectedBlock.SetDragPosition(targetPivotPosition);
-            return;
+            // Test if this would be a valid position
+            Vector2Int originalPos = selectedBlock.PivotGridPosition;
+            
+            // Try the new position
+            bool canMove = selectedBlock.TryMove(targetGridPos);
+            
+            // Visual feedback for invalid placement
+            selectedBlock.SetInvalidPlacementVisual(!canMove);
+            
+            // If move failed, revert position but keep visual at drag position
+            if (!canMove)
+            {
+                selectedBlock.TryMove(originalPos);
+            }
         }
-        
-        // Try moving one step at a time in the desired direction
-        Vector2Int testPos = currentGridPos;
-        bool moved = false;
-        
-        // Temporarily remove from the board to test movement
-        selectedBlock.RemoveFromBoard();
-        
-        // Try to move in the determined direction
-        testPos += moveDirection;
-        
-        // Test if this position would be valid
-        if (selectedBlock.TryMove(testPos))
-        {
-            // If valid, update current position
-            moved = true;
-            currentGridPos = testPos;
-        }
-        else
-        {
-            // If invalid, return to the original position
-            selectedBlock.TryMove(currentGridPos);
-        }
-        
-        // Get world position for display (whether we moved or not)
-        Vector3 displayPosition = board.GetWorldPositionFromGridPosition(currentGridPos);
-        
-        // If the original offset from grid center will push us, apply it (but don't exceed grid boundaries)
-        if (moveDirection.x == 0)
-        {
-            // Can shift freely within the cell horizontally
-            displayPosition.x = Mathf.Clamp(targetPivotPosition.x, 
-                                        displayPosition.x - board.cellSize/2 + 0.1f, 
-                                        displayPosition.x + board.cellSize/2 - 0.1f);
-        }
-        
-        if (moveDirection.y == 0)
-        {
-            // Can shift freely within the cell vertically
-            displayPosition.y = Mathf.Clamp(targetPivotPosition.y, 
-                                        displayPosition.y - board.cellSize/2 + 0.1f, 
-                                        displayPosition.y + board.cellSize/2 - 0.1f);
-        }
-        
-        // Update visual position
-        selectedBlock.SetDragPosition(displayPosition);
-        
-        // Color based on movement success
-        selectedBlock.SetInvalidPlacementVisual(!moved && (targetGridPos != currentGridPos));
     }
 
     void EndDrag(Vector2 screenPos)
@@ -321,15 +297,17 @@ public class InputHandler : MonoBehaviour
         Vector3 worldPosition = mainCamera.ScreenToWorldPoint(screenPos);
         worldPosition.z = 0;
         
-        // Apply offset to get the pivot position
-        Vector3 targetPivotPosition = worldPosition + dragOffset;
+        // Apply offset to get the final pivot position
+        Vector3 finalPosition = worldPosition + dragOffset;
+        Debug.Log($"EndDrag at position: {finalPosition}, attempting to snap");
         
-        // Snap to grid and check if position is valid
-        bool success = selectedBlock.SnapToGrid(targetPivotPosition);
+        // Snap to grid
+        bool success = selectedBlock.SnapToGrid(finalPosition);
         
         // If snapping failed, revert to original position
         if (!success)
         {
+            Debug.Log($"Snapping failed, reverting to original position: {originalGridPosition}");
             selectedBlock.TryMove(originalGridPosition);
         }
         
@@ -337,28 +315,34 @@ public class InputHandler : MonoBehaviour
         selectedBlock.SetDragVisualState(false);
         selectedBlock.SetInvalidPlacementVisual(false);
         
+        // Reset dragging state
         isDragging = false;
         selectedBlock = null;
+        
         Debug.Log("Drag completed");
     }
 
     Vector2Int GetGridPosition(Vector3 worldPosition)
     {
-        // Adjust these values based on your grid's actual setup
+        // Adjust for grid origin
         float gridOriginX = board.transform.position.x;
         float gridOriginY = board.transform.position.y;
         
-        // Adjust for grid cell size (assuming square cells)
+        // Get cell size
         float cellSize = board.cellSize;
 
-        // Calculate grid coordinates
-        int x = Mathf.FloorToInt((worldPosition.x - gridOriginX) / cellSize);
-        int y = Mathf.FloorToInt((worldPosition.y - gridOriginY) / cellSize);
-
-        // Clamp to ensure within grid bounds
-        x = Mathf.Clamp(x, 0, board.gridWidth - 1);
-        y = Mathf.Clamp(y, 0, board.gridHeight - 1);
-
-        return new Vector2Int(x, y);
+        // Calculate relative position from grid origin
+        float relativeX = worldPosition.x - gridOriginX;
+        float relativeY = worldPosition.y - gridOriginY;
+        
+        // Calculate grid coordinates with rounding
+        int gridX = Mathf.RoundToInt(relativeX / cellSize);
+        int gridY = Mathf.RoundToInt(relativeY / cellSize);
+        
+        // Clamp to valid grid range
+        gridX = Mathf.Clamp(gridX, 0, board.gridWidth - 1);
+        gridY = Mathf.Clamp(gridY, 0, board.gridHeight - 1);
+        
+        return new Vector2Int(gridX, gridY);
     }
 }

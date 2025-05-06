@@ -34,6 +34,10 @@ public class Block : MonoBehaviour
     // Visual components
     private List<SpriteRenderer> cellRenderers = new List<SpriteRenderer>();
 
+    // For drag and snap behavior
+    private Vector3 dragStartPosition;
+    private Vector2Int dragStartGridPosition;
+
     void Awake()
     {
         // If no shape defined, default to a 1x1 block
@@ -111,7 +115,6 @@ public class Block : MonoBehaviour
         // Update position on the board
         UpdateBoardPosition();
     }
-
     
     // Update the position of all cells on the board
     private void UpdateBoardPosition()
@@ -208,6 +211,14 @@ public class Block : MonoBehaviour
         }
     }
     
+    // Start dragging this block
+    public void StartDrag(Vector3 worldPosition)
+    {
+        dragStartPosition = transform.position;
+        dragStartGridPosition = PivotGridPosition;
+        RemoveFromBoard();
+    }
+    
     // Try to move the block to a new grid position
     public bool TryMove(Vector2Int newPivotPosition)
     {
@@ -300,59 +311,98 @@ public class Block : MonoBehaviour
     // Snap to the nearest valid grid position after dragging
     public bool SnapToGrid(Vector3 worldPosition)
     {
-        // Calculate the nearest pivot grid position based on world position
-        Vector2Int nearestGridPos = CalculateNearestValidGridPosition(worldPosition);
+        // Calculate the grid position for the pivot based on the current visual position
+        Vector2Int targetGridPos = WorldToGridPosition(worldPosition);
+        Debug.Log($"Current visual position: {worldPosition}, mapped to grid: {targetGridPos}");
         
-        // Try to move to that position
-        return TryMove(nearestGridPos);
-    }
-    
-    // Calculate the nearest valid grid position for the pivot
-    private Vector2Int CalculateNearestValidGridPosition(Vector3 worldPosition)
-    {
-        // Convert world position to grid position
-        float gridX = (worldPosition.x - board.transform.position.x) / board.cellSize;
-        float gridY = (worldPosition.y - board.transform.position.y) / board.cellSize;
-        
-        Vector2Int baseGridPos = new Vector2Int(Mathf.RoundToInt(gridX), Mathf.RoundToInt(gridY));
-        
-        // If the base position is valid, return it
-        PivotGridPosition = baseGridPos;
-        if (IsValidPosition())
+        // Try the target position first (where the player released the block)
+        if (TryPositionAt(targetGridPos))
         {
-            return baseGridPos;
+            Debug.Log($"Successfully snapped to target grid position: {targetGridPos}");
+            return true;
         }
         
-        // If not valid, search nearby positions
-        // Define search radius (how far to look for valid positions)
-        int searchRadius = 3;
-        
-        // Search in expanding square pattern
-        for (int radius = 1; radius <= searchRadius; radius++)
+        // If the target position doesn't work, try adjacent positions in a specific order
+        // First prioritize horizontal movement (left/right), then vertical (up/down)
+        Vector2Int[] prioritizedOffsets = new Vector2Int[]
         {
-            for (int x = -radius; x <= radius; x++)
+            // First try original position
+            Vector2Int.zero,
+            
+            // Then try horizontal offsets (left/right)
+            new Vector2Int(1, 0),    // right
+            new Vector2Int(-1, 0),   // left
+            
+            // Then try vertical offsets (up/down)
+            new Vector2Int(0, 1),    // up
+            new Vector2Int(0, -1),   // down
+            
+            // Then try diagonal offsets
+            new Vector2Int(1, 1),    // up-right
+            new Vector2Int(-1, 1),   // up-left
+            new Vector2Int(1, -1),   // down-right
+            new Vector2Int(-1, -1)   // down-left
+        };
+        
+        // Try each position in our priority order
+        foreach (Vector2Int offset in prioritizedOffsets)
+        {
+            Vector2Int testPos = targetGridPos + offset;
+            if (TryPositionAt(testPos))
             {
-                for (int y = -radius; y <= radius; y++)
-                {
-                    // Skip positions that aren't on the edge of the current search square
-                    if (Mathf.Abs(x) != radius && Mathf.Abs(y) != radius)
-                    {
-                        continue;
-                    }
-                    
-                    Vector2Int testPos = baseGridPos + new Vector2Int(x, y);
-                    PivotGridPosition = testPos;
-                    
-                    if (IsValidPosition())
-                    {
-                        return testPos;
-                    }
-                }
+                Debug.Log($"Successfully snapped to offset position: {testPos}");
+                return true;
             }
         }
         
-        // If no valid position found, return the original position
-        return PivotGridPosition;
+        // If still no valid position, try the original position we were dragged from
+        if (TryPositionAt(PivotGridPosition))
+        {
+            Debug.Log($"Falling back to original position: {PivotGridPosition}");
+            return true;
+        }
+        
+        // If all attempts failed, return false
+        return false;
+    }
+    
+    // Helper method to try positioning the block at a specific grid position
+    private bool TryPositionAt(Vector2Int gridPos)
+    {
+        // Store current grid position
+        Vector2Int originalPosition = PivotGridPosition;
+        
+        // Update pivot grid position
+        PivotGridPosition = gridPos;
+        
+        // Check if position is valid
+        if (IsValidPosition())
+        {
+            // If valid, update the board and visual position
+            PlaceOnBoard();
+            UpdateVisualPosition();
+            return true;
+        }
+        else
+        {
+            // Revert to original position
+            PivotGridPosition = originalPosition;
+            return false;
+        }
+    }
+    
+    // Convert world position to grid position
+    private Vector2Int WorldToGridPosition(Vector3 worldPos)
+    {
+        // Calculate relative position from the board's origin
+        float relativeX = worldPos.x - board.transform.position.x;
+        float relativeY = worldPos.y - board.transform.position.y;
+        
+        // Convert to grid coordinates
+        int gridX = Mathf.RoundToInt(relativeX / board.cellSize);
+        int gridY = Mathf.RoundToInt(relativeY / board.cellSize);
+        
+        return new Vector2Int(gridX, gridY);
     }
     
     // Define preset shapes for blocks
@@ -428,11 +478,11 @@ public class Block : MonoBehaviour
     // Method to show visual feedback when in invalid position
     public void SetInvalidPlacementVisual(bool isInvalid)
     {
-        Debug.Log($"SetInvalidPlacementVisual called with isInvalid={isInvalid}");
-        Debug.Log($"Number of cell renderers: {cellRenderers.Count}");
         // Visual feedback - red tint when invalid, normal color when valid
         foreach (SpriteRenderer renderer in cellRenderers)
         {
+            if (renderer == null) continue;
+            
             if (isInvalid)
             {
                 // Add red tint and lower opacity to indicate invalid position
@@ -466,6 +516,8 @@ public class Block : MonoBehaviour
         // Visual feedback - slightly transparent when dragging
         foreach (SpriteRenderer renderer in cellRenderers)
         {
+            if (renderer == null) continue;
+            
             Color currentColor = renderer.color;
             currentColor.a = isDragging ? 0.7f : 1.0f;
             renderer.color = currentColor;
