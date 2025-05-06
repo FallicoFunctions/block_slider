@@ -1,0 +1,4 @@
+repository "Block_Slider/Block_Slider@2475833621444@cloud"
+  path "/"
+    br "/main"
+    co "/main"
