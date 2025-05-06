@@ -246,51 +246,71 @@ public class InputHandler : MonoBehaviour
         // Apply offset to get the pivot position
         Vector3 targetPivotPosition = worldPosition + dragOffset;
         
-        // Update block's visual position during drag (free-form movement)
-        selectedBlock.SetDragPosition(targetPivotPosition);
+        // Calculate the grid position for the target
+        Vector2Int targetGridPos = GetGridPosition(targetPivotPosition);
         
-        // Check if this position would be valid
-        Vector2Int nearestGridPos = GetGridPosition(targetPivotPosition);
+        // Find movement direction (comparing to current position)
+        Vector2Int currentGridPos = selectedBlock.PivotGridPosition;
+        Vector2Int moveDirection = new Vector2Int(
+            Mathf.Clamp(targetGridPos.x - currentGridPos.x, -1, 1),
+            Mathf.Clamp(targetGridPos.y - currentGridPos.y, -1, 1)
+        );
         
-        // Save original position
-        Vector2Int originalPos = selectedBlock.PivotGridPosition;
+        // If we're not trying to move, just update the visual position
+        if (moveDirection.x == 0 && moveDirection.y == 0)
+        {
+            selectedBlock.SetDragPosition(targetPivotPosition);
+            return;
+        }
         
-        // Do a clean validation test
-        // First ensure the block is completely removed from the board
+        // Try moving one step at a time in the desired direction
+        Vector2Int testPos = currentGridPos;
+        bool moved = false;
+        
+        // Temporarily remove from the board to test movement
         selectedBlock.RemoveFromBoard();
         
-        // Test if the new position would be valid
-        bool positionValid = false;
+        // Try to move in the determined direction
+        testPos += moveDirection;
         
-        // We need to temporarily set the position to test validity
-        // But we use TryMove which handles all the logic internally
-        if (selectedBlock.TryMove(nearestGridPos))
+        // Test if this position would be valid
+        if (selectedBlock.TryMove(testPos))
         {
-            positionValid = true;
-            // Move back to original position
-            selectedBlock.TryMove(originalPos);
+            // If valid, update current position
+            moved = true;
+            currentGridPos = testPos;
         }
         else
         {
-            // If invalid, make sure we're back at the original position
-            selectedBlock.TryMove(originalPos);
+            // If invalid, return to the original position
+            selectedBlock.TryMove(currentGridPos);
         }
         
-        // Keep visual position at drag point
-        selectedBlock.SetDragPosition(targetPivotPosition);
+        // Get world position for display (whether we moved or not)
+        Vector3 displayPosition = board.GetWorldPositionFromGridPosition(currentGridPos);
         
-        // Debug the position validity
-        Debug.Log($"Position at {nearestGridPos} is {(positionValid ? "valid" : "invalid")}");
-        
-        // Set visual feedback for invalid position
-        if (!positionValid)
+        // If the original offset from grid center will push us, apply it (but don't exceed grid boundaries)
+        if (moveDirection.x == 0)
         {
-            selectedBlock.SetInvalidPlacementVisual(true);
+            // Can shift freely within the cell horizontally
+            displayPosition.x = Mathf.Clamp(targetPivotPosition.x, 
+                                        displayPosition.x - board.cellSize/2 + 0.1f, 
+                                        displayPosition.x + board.cellSize/2 - 0.1f);
         }
-        else
+        
+        if (moveDirection.y == 0)
         {
-            selectedBlock.SetInvalidPlacementVisual(false);
+            // Can shift freely within the cell vertically
+            displayPosition.y = Mathf.Clamp(targetPivotPosition.y, 
+                                        displayPosition.y - board.cellSize/2 + 0.1f, 
+                                        displayPosition.y + board.cellSize/2 - 0.1f);
         }
+        
+        // Update visual position
+        selectedBlock.SetDragPosition(displayPosition);
+        
+        // Color based on movement success
+        selectedBlock.SetInvalidPlacementVisual(!moved && (targetGridPos != currentGridPos));
     }
 
     void EndDrag(Vector2 screenPos)

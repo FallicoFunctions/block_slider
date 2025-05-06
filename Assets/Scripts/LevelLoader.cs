@@ -5,7 +5,13 @@ public class LevelLoader : MonoBehaviour
 {
     public Board board;
     
-    // Base block prefab that will be used for all blocks
+    // References to color-specific prefabs
+    public GameObject redBlockPrefab;
+    public GameObject greenBlockPrefab;
+    public GameObject blueBlockPrefab;
+    public GameObject yellowBlockPrefab;
+
+    // Default fallback prefab (can be removed if no longer needed)
     public GameObject blockPrefab;
     
     // Sprite to use for block cells (fallback if not set in prefab)
@@ -102,34 +108,6 @@ public class LevelLoader : MonoBehaviour
         CreateBlock(Block.BlockColor.Green, new Vector2Int(8, 8), "vertical2");
     }
     
-    // Create a block with specified properties
-    private void CreateBlock(Block.BlockColor color, Vector2Int position, string shapeName)
-    {
-        // Instantiate from prefab
-        GameObject blockObject = Instantiate(blockPrefab, board.transform);
-        
-        // Get or add Block component
-        Block block = blockObject.GetComponent<Block>();
-        if (block == null)
-        {
-            block = blockObject.AddComponent<Block>();
-        }
-        
-        // Set block properties
-        block.color = color;
-        
-        // Get shape coordinates based on shape name
-        List<Vector2Int> shapeCoords = Block.GetShapeCoordinates(shapeName);
-        
-        // Initialize the block
-        block.Initialize(board, position, shapeCoords);
-        
-        // Name the block for easier debugging
-        blockObject.name = $"{color}Block_{shapeName}";
-        
-        Debug.Log($"Created {color} block with shape '{shapeName}' at position {position}");
-    }
-    
     // Custom method to create blocks with custom shapes
     public void CreateCustomBlock(Block.BlockColor color, Vector2Int position, List<Vector2Int> customShape)
     {
@@ -173,5 +151,54 @@ public class LevelLoader : MonoBehaviour
         
         // Create the custom U-shaped block
         CreateCustomBlock(Block.BlockColor.Blue, new Vector2Int(3, 3), uShape);
+    }
+
+    private void CreateBlock(Block.BlockColor color, Vector2Int position, string shapeName)
+    {
+        // Select the appropriate prefab based on color
+        GameObject prefabToUse;
+        
+        switch (color)
+        {
+            case Block.BlockColor.Red:
+                prefabToUse = redBlockPrefab;
+                break;
+            case Block.BlockColor.Green:
+                prefabToUse = greenBlockPrefab;
+                break;
+            case Block.BlockColor.Blue:
+                prefabToUse = blueBlockPrefab;
+                break;
+            case Block.BlockColor.Yellow:
+                prefabToUse = yellowBlockPrefab;
+                break;
+            default:
+                prefabToUse = blockPrefab; // Fallback
+                break;
+        }
+        
+        // Instantiate from the selected prefab
+        GameObject blockObject = Instantiate(prefabToUse, board.transform);
+        
+        // Get Block component
+        Block block = blockObject.GetComponent<Block>();
+        if (block == null)
+        {
+            block = blockObject.AddComponent<Block>();
+        }
+        
+        // Set block properties
+        block.color = color;
+        
+        // Get shape coordinates based on shape name
+        List<Vector2Int> shapeCoords = Block.GetShapeCoordinates(shapeName);
+        
+        // Initialize the block
+        block.Initialize(board, position, shapeCoords);
+        
+        // Name the block for easier debugging
+        blockObject.name = $"{color}Block_{shapeName}";
+        
+        Debug.Log($"Created {color} block with shape '{shapeName}' at position {position}");
     }
 }

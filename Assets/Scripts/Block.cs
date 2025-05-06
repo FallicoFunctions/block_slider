@@ -59,6 +59,9 @@ public class Block : MonoBehaviour
         }
         cellRenderers.Clear();
         
+        // Get the sprite renderer on this object to use its properties
+        SpriteRenderer mainRenderer = GetComponent<SpriteRenderer>();
+        
         // Create a visual element for each cell in the shape
         foreach (Vector2Int cell in shape)
         {
@@ -70,26 +73,21 @@ public class Block : MonoBehaviour
             
             // Add sprite renderer
             SpriteRenderer renderer = cellObj.AddComponent<SpriteRenderer>();
-            renderer.sprite = Resources.Load<Sprite>("BlockCell"); // Load a sprite from Resources folder
             
-            // Set color based on block color
-            switch (color)
+            // Copy sprite and color from the main renderer
+            if (mainRenderer != null)
             {
-                case BlockColor.Red:
-                    renderer.color = Color.red;
-                    break;
-                case BlockColor.Green:
-                    renderer.color = Color.green;
-                    break;
-                case BlockColor.Blue:
-                    renderer.color = Color.blue;
-                    break;
-                case BlockColor.Yellow:
-                    renderer.color = Color.yellow;
-                    break;
+                renderer.sprite = mainRenderer.sprite;
+                renderer.color = mainRenderer.color;
             }
             
             cellRenderers.Add(renderer);
+        }
+        
+        // Disable the main renderer since we're using child renderers
+        if (mainRenderer != null)
+        {
+            mainRenderer.enabled = false;
         }
     }
 
@@ -107,9 +105,13 @@ public class Block : MonoBehaviour
         // Set the initial position
         PivotGridPosition = startPosition;
         
+        // Generate the visuals now that we have all the properties set
+        GenerateVisuals();
+        
         // Update position on the board
         UpdateBoardPosition();
     }
+
     
     // Update the position of all cells on the board
     private void UpdateBoardPosition()

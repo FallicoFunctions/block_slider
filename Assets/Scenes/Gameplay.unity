@@ -250,7 +250,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   board: {fileID: 931552016}
-  blockPrefab: {fileID: 519130596771162298, guid: 2d2577e8e18d74c7a94e818bb03fef3f, type: 3}
+  redBlockPrefab: {fileID: 519130596771162298, guid: 35e50d7f08b4b47f7b9d486e14946a0d, type: 3}
+  greenBlockPrefab: {fileID: 519130596771162298, guid: 2d2577e8e18d74c7a94e818bb03fef3f, type: 3}
+  blueBlockPrefab: {fileID: 519130596771162298, guid: edea1885cae5249f2a3a24f7cee2a6de, type: 3}
+  yellowBlockPrefab: {fileID: 519130596771162298, guid: 153fa35e398d24d60b6618b411789c81, type: 3}
+  blockPrefab: {fileID: 519130596771162298, guid: e06f83f4f9a974bd5b6f5452b9d450e2, type: 3}
   blockCellSprite: {fileID: 0}
 --- !u!4 &168092565
 Transform:
