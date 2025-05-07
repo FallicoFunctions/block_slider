@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using System;
 
 public class Block : MonoBehaviour
 {
@@ -37,6 +38,7 @@ public class Block : MonoBehaviour
     // For drag and snap behavior
     private Vector3 dragStartPosition;
     private Vector2Int dragStartGridPosition;
+    public Vector3 DragOffset { get; set; } = Vector3.zero;
 
     void Awake()
     {
@@ -311,58 +313,47 @@ public class Block : MonoBehaviour
     // Snap to the nearest valid grid position after dragging
     public bool SnapToGrid(Vector3 worldPosition)
     {
-        // Calculate the grid position for the pivot based on the current visual position
-        Vector2Int targetGridPos = WorldToGridPosition(worldPosition);
+        // Store original position in case we need to revert
+        Vector2Int originalPosition = PivotGridPosition;
+        
+        // Calculate the grid position where the player is trying to place the block
+        // This adjusts for the original click offset
+        Vector3 targetPivotWorldPos = worldPosition - DragOffset;
+        Vector2Int targetGridPos = WorldToGridPosition(targetPivotWorldPos);
+        
         Debug.Log($"Current visual position: {worldPosition}, mapped to grid: {targetGridPos}");
         
-        // Try the target position first (where the player released the block)
-        if (TryPositionAt(targetGridPos))
+        // Try positions in a spiral pattern outward from the target
+        for (int radius = 0; radius <= 3; radius++)
         {
-            Debug.Log($"Successfully snapped to target grid position: {targetGridPos}");
-            return true;
-        }
-        
-        // If the target position doesn't work, try adjacent positions in a specific order
-        // First prioritize horizontal movement (left/right), then vertical (up/down)
-        Vector2Int[] prioritizedOffsets = new Vector2Int[]
-        {
-            // First try original position
-            Vector2Int.zero,
-            
-            // Then try horizontal offsets (left/right)
-            new Vector2Int(1, 0),    // right
-            new Vector2Int(-1, 0),   // left
-            
-            // Then try vertical offsets (up/down)
-            new Vector2Int(0, 1),    // up
-            new Vector2Int(0, -1),   // down
-            
-            // Then try diagonal offsets
-            new Vector2Int(1, 1),    // up-right
-            new Vector2Int(-1, 1),   // up-left
-            new Vector2Int(1, -1),   // down-right
-            new Vector2Int(-1, -1)   // down-left
-        };
-        
-        // Try each position in our priority order
-        foreach (Vector2Int offset in prioritizedOffsets)
-        {
-            Vector2Int testPos = targetGridPos + offset;
-            if (TryPositionAt(testPos))
+            for (int dy = -radius; dy <= radius; dy++)
             {
-                Debug.Log($"Successfully snapped to offset position: {testPos}");
-                return true;
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    // Skip positions that aren't on the "edge" of the current radius
+                    // unless we're at radius 0
+                    if (radius > 0 && Math.Abs(dx) != radius && Math.Abs(dy) != radius)
+                        continue;
+                    
+                    Vector2Int testPos = targetGridPos + new Vector2Int(dx, dy);
+                    
+                    if (TryPositionAt(testPos))
+                    {
+                        Debug.Log($"Successfully snapped to target grid position: {testPos}");
+                        return true;
+                    }
+                }
             }
         }
         
-        // If still no valid position, try the original position we were dragged from
-        if (TryPositionAt(PivotGridPosition))
+        // If all attempts failed, try the original position
+        if (TryPositionAt(originalPosition))
         {
-            Debug.Log($"Falling back to original position: {PivotGridPosition}");
+            Debug.Log($"Falling back to original position: {originalPosition}");
             return true;
         }
         
-        // If all attempts failed, return false
+        // If even that fails, return false
         return false;
     }
     
@@ -522,5 +513,21 @@ public class Block : MonoBehaviour
             currentColor.a = isDragging ? 0.7f : 1.0f;
             renderer.color = currentColor;
         }
+    }
+
+    public static bool WillFitOnBoard(Board board, Vector2Int position, string shapeName)
+    {
+        List<Vector2Int> shapeCoords = GetShapeCoordinates(shapeName);
+        
+        foreach (Vector2Int offset in shapeCoords)
+        {
+            Vector2Int gridPos = position + offset;
+            if (!board.IsValidGridPosition(gridPos))
+            {
+                return false;
+            }
+        }
+        
+        return true;
     }
 }

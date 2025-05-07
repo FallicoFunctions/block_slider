@@ -155,6 +155,13 @@ public class LevelLoader : MonoBehaviour
 
     private void CreateBlock(Block.BlockColor color, Vector2Int position, string shapeName)
     {
+        // Check if the block will fit on the board
+        if (!Block.WillFitOnBoard(board, position, shapeName))
+        {
+            Debug.LogWarning($"Cannot place {color} block with shape '{shapeName}' at position {position} - it would extend outside the grid!");
+            return; // Skip creating this block
+        }
+        
         // Select the appropriate prefab based on color
         GameObject prefabToUse;
         

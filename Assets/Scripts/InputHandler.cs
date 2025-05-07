@@ -224,7 +224,7 @@ public class InputHandler : MonoBehaviour
         Vector2Int gridPosition = GetGridPosition(worldPosition);
         Debug.Log($"StartDrag at grid position: {gridPosition}");
         
-        // Try to find block at this EXACT position - no radius check
+        // Try to find block at this position
         selectedBlock = board.GetBlockAtPosition(gridPosition);
         
         if (selectedBlock != null)
@@ -232,10 +232,12 @@ public class InputHandler : MonoBehaviour
             // Store original position for potential revert
             originalGridPosition = selectedBlock.PivotGridPosition;
             
-            // Calculate offset between touch point and block pivot
-            Vector3 blockPivotWorldPos = board.GetWorldPositionFromGridPosition(selectedBlock.PivotGridPosition);
-            dragOffset = blockPivotWorldPos - worldPosition;
-            dragOffset.z = 0;
+            // Calculate the exact offset between the click point and the pivot
+            Vector3 pivotWorldPos = board.GetWorldPositionFromGridPosition(selectedBlock.PivotGridPosition);
+            dragOffset = worldPosition - pivotWorldPos;
+            
+            // Store the click position (not the drag offset) in the block
+            selectedBlock.DragOffset = dragOffset;
             
             // Temporarily remove block from grid during dragging
             selectedBlock.RemoveFromBoard();
@@ -244,14 +246,13 @@ public class InputHandler : MonoBehaviour
             selectedBlock.SetDragVisualState(true);
             
             isDragging = true;
-            Debug.Log($"Started dragging block at {selectedBlock.PivotGridPosition}");
+            Debug.Log($"Started dragging block at {selectedBlock.PivotGridPosition}, click offset: {dragOffset}");
         }
         else
         {
             Debug.Log($"No block found at grid position {gridPosition}");
         }
     }
-
     void UpdateDrag(Vector2 screenPos)
     {
         if (selectedBlock == null || !isDragging) return;
